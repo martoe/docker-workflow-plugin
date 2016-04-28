@@ -50,6 +50,8 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import javax.annotation.Nonnull;
 
 import hudson.util.VersionNumber;
@@ -104,6 +106,11 @@ public class WithContainerStep extends AbstractStepImpl {
     public static class Execution extends AbstractStepExecutionImpl {
 
         private static final long serialVersionUID = 1;
+        /**
+         * Regex pattern for a Windows absolute path (e.g. "C:\Users\joe")
+         * The first capturing group contains the drive letter, the second contains the directories.
+         */
+        private static final Pattern windowsAbsolutePath = Pattern.compile("^([a-zA-Z]):\\\\(.*)$");
         @Inject(optional=true) private transient WithContainerStep step;
         @StepContextParameter private transient Launcher launcher;
         @StepContextParameter private transient TaskListener listener;
@@ -122,7 +129,7 @@ public class WithContainerStep extends AbstractStepImpl {
             envReduced.entrySet().removeAll(envHost.entrySet());
             LOGGER.log(Level.FINE, "reduced environment: {0}", envReduced);
             workspace.mkdirs(); // otherwise it may be owned by root when created for -v
-            String ws = workspace.getRemote();
+            String ws = volumePath(workspace.getRemote());
             toolName = step.toolName;
             DockerClient dockerClient = new DockerClient(launcher, node, toolName);
 
@@ -140,7 +147,7 @@ public class WithContainerStep extends AbstractStepImpl {
             volumes.put(ws, ws);
             FilePath tempDir = tempDir(workspace);
             tempDir.mkdirs();
-            String tmp = tempDir.getRemote();
+            String tmp = volumePath(tempDir.getRemote());
             volumes.put(tmp, tmp);
             container = dockerClient.run(env, step.image, step.args, ws, volumes, envReduced, dockerClient.whoAmI(), /* expected to hang until killed */ "cat");
             DockerFingerprints.addRunFacet(dockerClient.getContainerRecord(env, container), run);
@@ -155,6 +162,18 @@ public class WithContainerStep extends AbstractStepImpl {
         // TODO use 1.652 use WorkspaceList.tempDir
         private static FilePath tempDir(FilePath ws) {
             return ws.sibling(ws.getName() + System.getProperty(WorkspaceList.class.getName(), "@") + "tmp");
+        }
+        
+        /** If running on Windows, turn a path like "C:\Users\joe" (case insensitive) into "/c/Users/joe" (as expected by docker; case sensitive) */
+        private String volumePath(String path) {
+            if (!launcher.isUnix()) {
+                Matcher matcher = windowsAbsolutePath.matcher(path);
+                if (matcher.matches()) {
+                    path = "/" + matcher.group(1).toLowerCase() + "/" + matcher.group(2);
+                }
+                path = path.replace('\\', '/');
+            }
+            return path;
         }
 
         @Override public void stop(@Nonnull Throwable cause) throws Exception {

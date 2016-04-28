@@ -79,14 +79,17 @@ public class DockerClient {
      * @param workdir The working directory in the container, or {@code null} for default.
      * @param volumes Volumes to be bound. Supply an empty list if no volumes are to be bound.
      * @param containerEnv Environment variables to set in container.
-     * @param user The <strong>uid:gid</strong> to execute the container command as. Use {@link #whoAmI()}.
+     * @param user The <strong>uid:gid</strong> to execute the container command as. Use {@link #whoAmI()}. Not available on Windows.
      * @param command The command to execute in the image container being run.
      * @return The container ID.
      */
-    public String run(@Nonnull EnvVars launchEnv, @Nonnull String image, @CheckForNull String args, @CheckForNull String workdir, @Nonnull Map<String, String> volumes, @Nonnull EnvVars containerEnv, @Nonnull String user, @CheckForNull String... command) throws IOException, InterruptedException {
+    public String run(@Nonnull EnvVars launchEnv, @Nonnull String image, @CheckForNull String args, @CheckForNull String workdir, @Nonnull Map<String, String> volumes, @Nonnull EnvVars containerEnv, String user, @CheckForNull String... command) throws IOException, InterruptedException {
         ArgumentListBuilder argb = new ArgumentListBuilder();
 
-        argb.add("run", "-t", "-d", "-u", user);
+        argb.add("run", "-t", "-d");
+        if (user != null) {
+            argb.add("-u", user);
+        }
         if (args != null) {
             argb.addTokenized(args);
         }
@@ -260,9 +263,12 @@ public class DockerClient {
     /**
      * Who is executing this {@link DockerClient} instance.
      *
-     * @return a {@link String} containing the <strong>uid:gid</strong>.
+     * @return a {@link String} containing the <strong>uid:gid</strong>, {@code null} on Windows.
      */
     public String whoAmI() throws IOException, InterruptedException {
+        if (!launcher.isUnix()) {
+            return null;
+        }
         ByteArrayOutputStream userId = new ByteArrayOutputStream();
         launcher.launch().cmds("id", "-u").quiet(true).stdout(userId).join();
 

@@ -103,7 +103,7 @@ class Docker implements Serializable {
         public <V> V inside(String args = '', Closure<V> body) {
             docker.node {
                 try {
-                    docker.script.sh "docker inspect -f . ${id}"
+                    exec "docker inspect -f . ${id}"
                     // OK, already pulled
                 } catch (hudson.AbortException e) {
                     // withDockerContainer requires the image to be available locally, since its start phase is not a durable task.
@@ -115,9 +115,17 @@ class Docker implements Serializable {
             }
         }
 
+        private void exec(String cmd) {
+            if (docker.script.isUnix()) {
+                docker.script.sh cmd
+            } else {
+                docker.script.bat cmd
+            }
+        }
+
         public void pull() {
             docker.node {
-                docker.script.sh "docker pull ${imageName()}"
+                exec "docker pull ${imageName()}"
             }
         }
 
